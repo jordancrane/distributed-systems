@@ -1,0 +1,20 @@
+3.1 [40 pts] Map-Reduce Task 1: Write a Map-Reduce program to dictionary sort the words in a
+given text file and out put a sorted list of words. Each word is preceeded by a serial number. 
+When words appear multiple times list them once but include the number of times they appeared (see example below). 
+At the end of the output file list the number of unique words and total number of words. 
+
+Input File: Will be a .txt file containing english text.  The length need not be fixed. 
+Example: The cow jumps over the moon. 
+
+Output File: Dictionary sorted list of words as shown below
+Example:
+1 cow
+2 jumps
+3 moon
+4 over
+5 the 2
+
+Unique Words: 5
+Total Words: 6
+
+ 
