@@ -1,3 +1,13 @@
+# Purchase Network
+
+```sh
+mvn package
+
+hadoop jar target/cs499-1.0-SNAPSHOT.jar PurchaseNetwork input output
+```
+
+## Description
+
 3.2 [60 pts] Map-Reduce Task 2: BeaverMart a big supermarket chain wants to find out what
 items in its stores are bought together so it can optimize the store layouts. It has records of customer purchases tracked 
 using store reward cards. Each record is a tuple of items that are bought in a single transaction (e.g., {item1, item2, item3, …}). 
