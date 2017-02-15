@@ -1,14 +1,15 @@
 JFLAGS = -g -d
 JC = javac
 NAME = WordCount
+JAVA_PATH = java
 
 default: jar
 
 jar: classes 
-	jar -cvf $(NAME).jar -C $(NAME)/ .
+	jar -cvf $(NAME).jar -C build/ .
 
 classes:
-	$(JC) -classpath $(HADOOP_CLASSPATH) $(JFLAGS) $(shell pwd)/$(NAME) *.java
+	sudo $(JC) -cp $(HADOOP_CLASSPATH) $(JAVA_PATH)/$(NAME).java -d build -Xlint:-path
 
 clean:
-	$(RM) *.class
+	$(RM) -r *.class output
