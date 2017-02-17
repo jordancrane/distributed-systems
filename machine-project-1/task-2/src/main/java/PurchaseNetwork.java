@@ -22,42 +22,47 @@ import java.util.stream.Collectors;
 public class PurchaseNetwork {
 
     static class PurchaseNetworkKey implements WritableComparable<PurchaseNetworkKey> {
-        Text left;
-        Text right;
+        Text first;
+        Text second;
 
         PurchaseNetworkKey() {
-            this.left = new Text();
-            this.right = new Text();
+            this.first = new Text();
+            this.second = new Text();
         }
 
-        PurchaseNetworkKey(String left, String right) {
-            this.left = new Text(left);
-            this.right = new Text(right);
+        PurchaseNetworkKey(String first, String second) {
+            if (first.compareTo(second) == 0) {
+                this.first = new Text(first);
+                this.second = new Text(second);
+            } else {
+                this.first = new Text(second);
+                this.second = new Text(first);
+            }
         }
 
         @Override
         public int compareTo(PurchaseNetworkKey o) {
-            if (left.compareTo(o.left) == 0) {
-                return right.compareTo(o.right);
+            if (first.compareTo(o.first) == 0) {
+                return second.compareTo(o.second);
             } else {
-                return left.compareTo(o.left);
+                return first.compareTo(o.first);
             }
         }
 
         @Override
         public void write(DataOutput dataOutput) throws IOException {
-            left.write(dataOutput);
-            right.write(dataOutput);
+            first.write(dataOutput);
+            second.write(dataOutput);
         }
 
         @Override
         public void readFields(DataInput dataInput) throws IOException {
-            left.readFields(dataInput);
-            right.readFields(dataInput);
+            first.readFields(dataInput);
+            second.readFields(dataInput);
         }
 
         public String toString() {
-            return "(" + left.toString() + ", " + right.toString() + ")";
+            return "(" + first.toString() + ", " + second.toString() + ")";
         }
     }
 

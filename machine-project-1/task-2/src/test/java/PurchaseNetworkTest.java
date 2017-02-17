@@ -55,6 +55,6 @@ public class PurchaseNetworkTest {
                 context
         );
 
-        verify(context, Mockito.times(1)).write(eq(new Text("(Whitey Toothpaste, Best Bread)")), eq(new IntWritable(2)));
+        verify(context, Mockito.times(1)).write(eq(new Text("(Best Bread, Whitey Toothpaste)")), eq(new IntWritable(2)));
     }
 }
