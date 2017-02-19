@@ -12,4 +12,4 @@ classes:
 	sudo $(JC) -cp $(HADOOP_CLASSPATH) $(JAVA_PATH)/$(NAME).java -d build -Xlint:-path
 
 clean:
-	$(RM) -r *.class output
+	$(RM) -r *.class *output build/*
