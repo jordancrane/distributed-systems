@@ -35,11 +35,10 @@ public class WordCount
 	public static void main(String[] args) throws Exception
 	{
         // Job configurations
-		Configuration conf1 = new Configuration();
-		Configuration conf2 = new Configuration();
+		Configuration conf = new Configuration();
 
         // Argument parser
-		String[] otherArgs = new GenericOptionsParser(conf1, args).getRemainingArgs();
+		String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
 		if (otherArgs.length != 2)
 		{
 			System.err.println("Usage: WordCount <in> <out>");
@@ -47,7 +46,7 @@ public class WordCount
 		}
 
         // MapReduce 1st pass
-		Job job1 = new Job(conf1, "WordCount");
+		Job job1 = new Job(conf, "WordCount");
 		job1.setJarByClass(WordCount.class);
 
 		job1.setMapperClass(WordCountMapper.class);
@@ -61,16 +60,13 @@ public class WordCount
 
 		job1.waitForCompletion(true);
 
-        // Configure second job to use key-value pairs for input
-        //conf2.set("mapreduce.input.keyvaluelinerecordreader.key.value.separator", ",");
-
         // MapReduce 2nd pass
-		Job job2 = new Job(conf2, "WordCountSum");
+		Job job2 = new Job(conf, "WordCountSum");
 		job2.setJarByClass(WordCount.class);
         job2.setInputFormatClass(KeyValueTextInputFormat.class);
 
 		job2.setMapperClass(WordCountSumMapper.class);
-		job2.setReducerClass(WordCountSumReducer.class);
+		job2.setReducerClass(WordCountReducer.class);
 
 		job2.setOutputKeyClass(Text.class);
 		job2.setOutputValueClass(IntWritable.class);
@@ -104,21 +100,6 @@ public class WordCount
 		}
 	}
 
-	public static class WordCountReducer extends Reducer<Text, IntWritable, Text, IntWritable>
-	{
-		@Override
-		public void reduce(Text word, Iterable<IntWritable> counts, Context context)
-			throws IOException, InterruptedException
-		{
-			int sum = 0;
-			for (IntWritable count : counts)
-			{
-				sum += count.get();
-			}
-			context.write(word, new IntWritable(sum));
-		}
-	}
-
 	public static class WordCountSumMapper extends Mapper<Text, Text, Text, IntWritable>
 	{
 		private Text total  = new Text("Total Words:");
@@ -139,34 +120,18 @@ public class WordCount
 		}
 	}
 
-	public static class WordCountSumReducer extends Reducer<Text, IntWritable, Text, IntWritable>
+	public static class WordCountReducer extends Reducer<Text, IntWritable, Text, IntWritable>
 	{
+		@Override
 		public void reduce(Text word, Iterable<IntWritable> counts, Context context)
 			throws IOException, InterruptedException
 		{
 			int sum = 0;
-            for (IntWritable count : counts)
-            {
-                sum += count.get();
-            }
-            context.write(word, new IntWritable(sum));
+			for (IntWritable count : counts)
+			{
+				sum += count.get();
+			}
+			context.write(word, new IntWritable(sum));
 		}
 	}
 }
-
-	//public static class WordCountSumMapper extends Mapper<Text, Text, Text, IntWritable>
-	//{
-	//	private Text word = new Text();
-
-	//	public void map(Iterable<IntWritable> values, Text key, Context context)
-	//		throws IOException, InterruptedException
-	//	{
-	//		for (IntWritable value : values)
-	//		{
-	//			unique_sum++;
-	//			total_sum = total_sum + new IntWritable(value.get()).get();
-	//			context.write(unique, new IntWritable(unique_sum));
-	//			context.write(total , new IntWritable(total_sum));
-	//		}
-	//	}
-	//}
