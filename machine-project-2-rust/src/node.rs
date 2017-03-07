@@ -8,7 +8,6 @@ enum State {
 service! {
     rpc request_vote();
     rpc vote();
-    rpc append_entries();
 }
 
 #[derive(Clone)]
@@ -34,11 +33,23 @@ impl Server {
 
 impl Service for Server {
     fn request_vote(&self) {
+        if self.state == State::Follower {
+            // vote yes 
+        }
+    
+        if self.state == State::Candidate {
+            // vote no
+        }
     }
 
     fn vote(&self) {
-    }
-
-    fn append_entries(&self) {
+        if self.state == State::Candidate {
+            self.vote_count += 1;
+           
+            // Does this node contain a majority?
+            // if self.vote_count > ( / 2) {
+            //   self.state = State::Leader;
+            // }
+        }
     }
 }
