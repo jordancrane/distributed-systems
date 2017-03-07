@@ -1,0 +1,19 @@
+[package]
+name = "machine-project-2"
+version = "0.1.0"
+authors = ["Jonah George <jonah.george@me.com>"]
+
+[dependencies]
+rand = "*"
+tokio-core = "*"
+toml = "*"
+serde = "*"
+serde_derive = "*"
+serde_json = "*"
+futures = "*"
+tarpc = "0.6.0"
+clap = "*"
+
+[[bin]]
+name = "machine-project-2"
+path = "src/main.rs"
