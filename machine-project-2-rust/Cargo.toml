@@ -5,12 +5,6 @@ authors = ["Jonah George <jonah.george@me.com>"]
 
 [dependencies]
 rand = "*"
-tokio-core = "*"
-toml = "*"
-serde = "*"
-serde_derive = "*"
-serde_json = "*"
-futures = "*"
 tarpc = "0.6.0"
 clap = "*"
 
