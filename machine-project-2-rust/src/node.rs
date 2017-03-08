@@ -1,7 +1,10 @@
-#[derive(Copy, Clone, Debug)]
-enum State {
-    Leader,
-    Candidate,
+use std::sync::RwLock;
+use std::sync::Arc;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum State { 
+    Leader, 
+    Candidate, 
     Follower,
 }
 
@@ -12,44 +15,45 @@ service! {
 
 #[derive(Clone)]
 pub struct Server {
-    state: State,
-    term: usize,
-    vote_count: usize,
+    state: Arc<RwLock<State>>,
+    term: Arc<RwLock<usize>>,
+    vote_count: Arc<RwLock<usize>>,
 }
 
 impl Server {
     pub fn new() -> Server {
         Server { 
-            state: State::Follower, 
-            term: 0,
-            vote_count: 0,
+            state: Arc::new(RwLock::new(State::Follower)), 
+            term: Arc::new(RwLock::new(0)),
+            vote_count: Arc::new(RwLock::new(0)),
         }
-    }
-
-    fn log(&self) {
-        println!("State: {:?}", self.state);
     }
 }
 
 impl Service for Server {
     fn request_vote(&self) {
-        if self.state == State::Follower {
+        let mut state = self.state.write().unwrap();
+
+        if *state == State::Follower {
             // vote yes 
         }
     
-        if self.state == State::Candidate {
+        if *state == State::Candidate {
             // vote no
         }
     }
 
     fn vote(&self) {
-        if self.state == State::Candidate {
-            self.vote_count += 1;
+        let mut state = self.state.write().unwrap();
+        let mut vote_count = self.vote_count.write().unwrap();
+
+        if  *state == State::Candidate {
+			*vote_count += 1;
            
             // Does this node contain a majority?
-            // if self.vote_count > ( / 2) {
-            //   self.state = State::Leader;
-            // }
+            if *vote_count > 2 {
+            	*state = State::Leader;
+            }
         }
     }
 }
