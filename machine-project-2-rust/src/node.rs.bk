@@ -2,9 +2,9 @@ use std::sync::RwLock;
 use std::sync::Arc;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-enum State {
-    Leader,
-    Candidate,
+enum State { 
+    Leader, 
+    Candidate, 
     Follower,
 }
 
@@ -22,8 +22,8 @@ pub struct Server {
 
 impl Server {
     pub fn new() -> Server {
-        Server {
-            state: Arc::new(RwLock::new(State::Follower)),
+        Server { 
+            state: Arc::new(RwLock::new(State::Follower)), 
             term: Arc::new(RwLock::new(0)),
             vote_count: Arc::new(RwLock::new(0)),
         }
@@ -35,9 +35,9 @@ impl Service for Server {
         let mut state = self.state.write().unwrap();
 
         if *state == State::Follower {
-            // vote yes
+            // vote yes 
         }
-
+    
         if *state == State::Candidate {
             // vote no
         }
@@ -47,12 +47,12 @@ impl Service for Server {
         let mut state = self.state.write().unwrap();
         let mut vote_count = self.vote_count.write().unwrap();
 
-        if *state == State::Candidate {
-            *vote_count += 1;
-
+        if  *state == State::Candidate {
+			*vote_count += 1;
+           
             // Does this node contain a majority?
             if *vote_count > 2 {
-                *state = State::Leader;
+            	*state = State::Leader;
             }
         }
     }
