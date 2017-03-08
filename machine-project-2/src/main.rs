@@ -1,4 +1,5 @@
-#[macro_use] extern crate tarpc;
+#[macro_use]
+extern crate tarpc;
 extern crate rand;
 extern crate clap;
 
@@ -6,14 +7,16 @@ mod config;
 mod node;
 
 use node::*;
-use config::{fetch_cli_options};
 use std::thread::sleep;
 use std::time::Duration;
 
 fn main() {
     // Fetch config
-    let (host, peers) = fetch_cli_options(); 
-    let mut clients: Vec<Client> = Vec::new();
+    let (host, peers) = config::fetch_cli_options();
+    let mut clients = Vec::new();
+
+    // TODO Make random between 150ms and 300ms
+    let timeout = Duration::from_millis(150);
 
     // Start server
     println!("Creating server on {}", host);
@@ -21,26 +24,21 @@ fn main() {
 
     // Start connections
     for peer in peers {
-        // TODO Need retry logic since we can't start all servers at 
+        // TODO Need retry logic since we can't start all servers at
         // exactly the same time
         println!("Creating client for {}", peer);
         let client = Client::new(peer);
         match client {
             Ok(c) => clients.push(c),
-            Err(..) => {},
+            Err(..) => {}
         }
     }
 
     println!("Connected to {} peers", clients.len());
 
-    // Event loop
+    // Leader timeout loop
     loop {
-        println!("Tick");
-
-        // Election timeout (between 150ms to 300ms)
-        // client.request_vote();
-
-        sleep(Duration::from_millis(100));
+        sleep(timeout);
     }
 
     // Stop connections
@@ -51,4 +49,3 @@ fn main() {
     // Stop server
     server.shutdown();
 }
-
