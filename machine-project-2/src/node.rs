@@ -1,25 +1,70 @@
 use tarpc::ServeHandle;
 use server::*;
+use std::time::{ Duration, Instant };
+use ticktock::timer::Timer;
 
 pub struct Node {
     pub serve_handle: ServeHandle,
     pub clients:      Vec<Client>,
     addr:  Client,
+    heartbeat_timer: Timer,
+    discovery_timer: Timer,
+    election_timer: Timer,
 }
 
 impl Node {
-    pub fn new(host: String) -> Self {
+    pub fn new(host: String, timeout: u64) -> Self {
+
         Node {
             serve_handle: Server::new().spawn(&host.as_str()).unwrap(),
             clients: Vec::new(),
             addr: Client::new(host).unwrap(),
+            // Create timers for election and new client discovery
+            election_timer: Timer::new(Duration::from_millis(timeout)),
+            discovery_timer: Timer::new(Duration::from_millis(1000)),
+            heartbeat_timer: Timer::new(Duration::from_millis(50)),
         }
     }
 
-    pub fn start(&self) {
-        // TODO Move main loop here
+    pub fn start(&mut self, mut peers: Vec<String>) {
+
+        // Start connections
+        self.add_clients(&mut peers);
+
+        // Operation loop
+        loop {
+            // Get current time
+            let now = Instant::now();
+
+            // Send heartbeat and log updates
+            if self.heartbeat_timer.has_fired(now){
+                self.send_message();
+                self.heartbeat_timer.reset(now);
+            }
+
+            // Periodically check for new clients
+            if self.discovery_timer.has_fired(now) {
+                self.add_clients(&mut peers);
+                self.discovery_timer.reset(now);
+            }
+
+            // Check if leader is alive, reset timer if so
+            if self.is_leader_alive() {
+                self.election_timer.reset(now);
+            }
+
+            // Check for election timeout
+            if self.election_timer.has_fired(now) {
+                self.initiate_election();
+                self.election_timer.reset(now);
+            }
+        }
     }
 
+    // TODO The logic in this function doesn't allow connections
+    // to be made until all peers have been initialized, due to
+    // the fact that the loop is broken on an Err(_) response
+    // in the nested match statement
     pub fn add_clients(&mut self, peers: &mut Vec<String>) {
         let ref mut clients = self.clients;
 
