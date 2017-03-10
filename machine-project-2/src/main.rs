@@ -13,39 +13,26 @@ use std::time::Duration;
 fn main() {
     // Fetch config
     let (host, peers) = config::fetch_cli_options();
-    let mut clients = Vec::new();
 
     // TODO Make random between 150ms and 300ms
     let timeout = Duration::from_millis(150);
 
     // Start server
     println!("Creating server on {}", host);
-    let server = Server::new().spawn(host.as_str()).unwrap();
+    let mut node = Node::new(host);
 
     // Start connections
-    for peer in peers {
-        // TODO Need retry logic since we can't start all servers at
-        // exactly the same time
-        println!("Creating client for {}", peer);
-        let client = Client::new(peer);
-        match client {
-            Ok(c) => clients.push(c),
-            Err(..) => {}
-        }
-    }
-
-    println!("Connected to {} peers", clients.len());
+    node.add_clients(peers);
 
     // Leader timeout loop
     loop {
+        node.notify();
         sleep(timeout);
     }
 
     // Stop connections
-    for client in clients {
-        drop(client);
-    }
+    node.drop_clients();
 
     // Stop server
-    server.shutdown();
+    node.serve_handle.shutdown();
 }
