@@ -1,7 +1,6 @@
 use std::sync::RwLock;
 use std::sync::Arc;
 use tarpc::ServeHandle;
-use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum State {
@@ -13,6 +12,8 @@ enum State {
 service! {
     rpc request_vote();
     rpc vote();
+    rpc increment_term();
+    rpc report_term() -> usize;
     rpc notify() -> String;
 }
 
@@ -61,6 +62,15 @@ impl Service for Server {
         }
     }
 
+    fn increment_term(&self) {
+        let mut term = self.term.write().unwrap();
+        *term += 1;
+    }
+
+    fn report_term(&self) -> usize {
+        *self.term.read().unwrap()
+    }
+
     fn notify(&self) -> String {
         "notify recieved".to_string()
     }
@@ -68,7 +78,7 @@ impl Service for Server {
 
 pub struct Node {
     pub serve_handle: ServeHandle,
-    clients:      Vec<Client>,
+    pub clients:      Vec<Client>,
     addr:  Client,
 }
 
@@ -81,15 +91,20 @@ impl Node {
         }
     }
 
-    pub fn add_clients(&mut self, peers: Vec<String>) {
+    pub fn add_clients(&mut self, peers: &mut Vec<String>) {
         let ref mut clients = self.clients;
-        for peer in peers {
-            // TODO Need retry logic since we can't start all servers at
-            // exactly the same time
-            println!("Creating client for {}", peer);
-            match Client::new(peer) {
-                Ok(c)  => clients.push(c),
-                Err(_) => {},
+        // for peer in peers {
+        while !peers.is_empty() {
+            match peers.pop() {
+                Some(peer) =>
+                    match Client::new(&peer) {
+                        Ok(c)  => clients.push(c),
+                        Err(_) => {
+                            peers.push(peer);
+                            break;
+                        }
+                    },
+                None => break,
             }
         }
         println!("Connected to {} peers", clients.len());
@@ -103,7 +118,7 @@ impl Node {
     }
 
     pub fn notify(&self) {
-        let s = self.addr.notify().unwrap();
-        println!("{}", &s);
+        let s = self.addr.report_term().unwrap();
+        println!("Term: {}", s);
     }
 }
