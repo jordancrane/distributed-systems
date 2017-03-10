@@ -5,9 +5,11 @@ extern crate clap;
 extern crate ticktock;
 
 mod config;
+mod server;
 mod node;
 
 use node::*;
+use server::*;
 use std::thread::sleep;
 use std::time::{ Duration, Instant };
 use ticktock::timer::Timer;
@@ -23,6 +25,7 @@ fn main() {
     // Create timers for election and new client discovery
     let mut election_timer = Timer::new(Duration::from_millis(timeout));
     let mut discovery_timer = Timer::new(Duration::from_millis(1000));
+    let mut heartbeat = Timer::new(Duration::from_millis(50));
 
     // Start server
     println!("Creating server on {}", host);
@@ -35,22 +38,27 @@ fn main() {
     loop {
         // Get current time
         let now = Instant::now();
-        
+
+        // Send heartbeat and log updates
+        if heartbeat.has_fired(now){
+            node.send_message();
+            heartbeat.reset(now);
+        }
+
         // Periodically check for new clients
         if discovery_timer.has_fired(now) {
             node.add_clients(&mut peers);
             discovery_timer.reset(now);
         }
 
+        // Check if leader is alive, reset timer if so
+        if node.is_leader_alive() {
+            election_timer.reset(now);
+        }
+
         // Check for election timeout
         if election_timer.has_fired(now) {
-            // TODO initiate election
-            // [Start test code]
-            for client in &node.clients {
-                client.increment_term();
-            }
-            node.notify();
-            // [End test code]
+            node.initiate_election();
             election_timer.reset(now);
         }
     }
