@@ -2,14 +2,18 @@ use tarpc::ServeHandle;
 use server::*;
 use std::time::{ Duration, Instant };
 use ticktock::timer::Timer;
+use codec::Codec;
+
 
 pub struct Node {
-    pub serve_handle: ServeHandle,
-    pub clients:      Vec<Client>,
-    addr:  Client,
+    serve_handle:    ServeHandle,
+    clients:         Vec<Client>,
+    requests:        Vec<(Request, u32)>,
+    addr:            Client,
     heartbeat_timer: Timer,
     discovery_timer: Timer,
-    election_timer: Timer,
+    election_timer:  Timer,
+    leader_timer:    Timer,
 }
 
 impl Node {
@@ -18,9 +22,11 @@ impl Node {
         Node {
             serve_handle: Server::new().spawn(&host.as_str()).unwrap(),
             clients: Vec::new(),
+            requests: Vec::new(),
             addr: Client::new(host).unwrap(),
             // Create timers for election and new client discovery
             election_timer: Timer::new(Duration::from_millis(timeout)),
+            leader_timer: Timer::new(Duration::from_millis(timeout)),
             discovery_timer: Timer::new(Duration::from_millis(1000)),
             heartbeat_timer: Timer::new(Duration::from_millis(50)),
         }
@@ -38,7 +44,7 @@ impl Node {
 
             // Send heartbeat and log updates
             if self.heartbeat_timer.has_fired(now){
-                self.send_message();
+                self.tx_request();
                 self.heartbeat_timer.reset(now);
             }
 
@@ -49,14 +55,14 @@ impl Node {
             }
 
             // Check if leader is alive, reset timer if so
-            if self.is_leader_alive() {
+            if self.heartbeat_rcvd() {
                 self.election_timer.reset(now);
             }
 
-            // Check for election timeout
-            if self.election_timer.has_fired(now) {
+            // Check for leader timeout
+            if self.leader_timer.has_fired(now) {
                 self.initiate_election();
-                self.election_timer.reset(now);
+                self.leader_timer.reset(now);
             }
         }
     }
@@ -65,7 +71,7 @@ impl Node {
     // to be made until all peers have been initialized, due to
     // the fact that the loop is broken on an Err(_) response
     // in the nested match statement
-    pub fn add_clients(&mut self, peers: &mut Vec<String>) {
+    fn add_clients(&mut self, peers: &mut Vec<String>) {
         let ref mut clients = self.clients;
 
         // Don't want to re-add existing clients
@@ -91,30 +97,43 @@ impl Node {
         println!("Connected to {} peers", clients.len());
     }
 
-    pub fn drop_clients(&self) {
+    fn tx_request(&mut self) {
+        let state_code = self.addr.get_state().unwrap();
         let clients = &self.clients;
-        for client in clients {
-            drop(client);
+        let mut requests = &mut self.requests;
+        let state = Codec::decode_state(state_code);
+
+        // If node is not leader, it doesn't need to send requests
+        if state != State::Leader {
+            return;
+        }
+        // Send request to non-leader nodes
+        else {
+            let (request, data) = requests.pop().unwrap();
+            let op_code = Codec::encode_request(request);
+            for client in clients {
+                let reply = client.rx_request(op_code, data);
+                // TODO Handle reply
+            }
         }
     }
 
-    pub fn is_leader_alive(&self) -> bool {
-        // TODO Check for heartbeat reciept
-        // Return true for now
-        true
+    pub fn drop_clients(&mut self) {
+        let mut clients = &mut self.clients;
+        while !clients.is_empty() {
+            drop(clients.pop());
+        }
     }
 
-    pub fn initiate_election(&self) {
+    fn heartbeat_rcvd(&self) -> bool {
+        self.addr.heartbeat_rcvd().unwrap()
+    }
+
+    fn initiate_election(&self) {
         // TODO Initiate election
     }
 
-    pub fn send_message(&self) {
-        // TODO send message and log updates
-    }
-
-    // This is a function to test inter-server communication
-    pub fn notify(&self) {
-        let s = self.addr.report_term().unwrap();
-        println!("Term: {}", s);
+    pub fn stop(self) {
+        self.serve_handle.shutdown();
     }
 }

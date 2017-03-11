@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate serde_derive;
+#[macro_use]
 extern crate tarpc;
 extern crate rand;
 extern crate clap;
@@ -7,6 +9,7 @@ extern crate ticktock;
 mod config;
 mod server;
 mod node;
+mod codec;
 
 use node::*;
 use server::*;
@@ -30,5 +33,5 @@ fn main() {
     node.drop_clients();
 
     // Stop server
-    node.serve_handle.shutdown();
+    node.stop();
 }
