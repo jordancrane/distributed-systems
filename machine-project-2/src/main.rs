@@ -2,9 +2,10 @@
 extern crate tarpc;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate clap;
 extern crate env_logger;
 extern crate rand;
-extern crate clap;
 extern crate ticktock;
 
 mod config;

@@ -1,7 +1,8 @@
 [package]
 name = "machine-project-2"
 version = "0.1.0"
-authors = ["Jonah George <jonah.george@me.com>"]
+authors = ["Jordan Crane <jordancrane@me.com",
+           "Jonah George <jonah.george@me.com>"]
 
 [dependencies]
 rand = "*"

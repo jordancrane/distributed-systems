@@ -32,7 +32,7 @@ pub struct Node {
 }
 
 // Create unique id from host/peer string
-fn hash<T: Hash>(t: &T) -> u64 {
+pub fn hash<T: Hash>(t: &T) -> u64 {
     let mut s = SipHasher::new();
     t.hash(&mut s);
     s.finish()
@@ -41,7 +41,7 @@ fn hash<T: Hash>(t: &T) -> u64 {
 impl Node {
     pub fn new(host: String, timeout: u64) -> Self {
         Node {
-            serve_handle: Server::new().spawn(&host.as_str()).unwrap(),
+            serve_handle: Server::new(hash(&host)).spawn(&host.as_str()).unwrap(),
             clients: Vec::new(),
             requests: Vec::new(),
             addr: Client::new(&host).unwrap(),
@@ -97,8 +97,7 @@ impl Node {
 
             // Check if leader is alive, reset timer if so
             if self.heartbeat_rcvd() {
-                info!("Heartbeat received");
-                self.election_timer.reset(now);
+                self.leader_timer.reset(now);
             }
 
             // Check for leader timeout
@@ -153,11 +152,14 @@ impl Node {
             return;
         } else { 
             // Send request to non-leader nodes
-            let (request, data) = requests.pop().unwrap();
+            let (request, data) = match requests.pop() {
+                Some(tuple) => tuple,
+                None => (Request::Heartbeat, 0),
+            };
             let op_code = Codec::encode_request(request);
 
             for client in clients {
-                let reply = client.client.rx_request(op_code, data);
+                let reply = client.client.rx_request(op_code, data, self.id);
                 // TODO Handle reply
                 // If request was a write request:
                 //
@@ -181,13 +183,14 @@ impl Node {
 
         // TODO identify server to clients
         for client in clients {
-            vote_count += match client.client.request_vote(client.id).unwrap() {
+            vote_count += match client.client.request_vote(self.id).unwrap() {
                 true => 1,
                 false => 0,
             };
             if vote_count > majority {
                 info!("{} is the new leader", self.id);
                 // New leader
+                self.addr.set_leader();
             }
         }
     }

@@ -2,6 +2,7 @@ use std::sync::RwLock;
 use std::sync::Arc;
 use std::io;
 use codec::Codec;
+use node::hash;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum State {
@@ -22,11 +23,12 @@ pub enum Request {
 service! {
     rpc request_vote(id: u64) -> bool;
     rpc vote();
-    rpc rx_request(operation: u8, data: u32) -> bool;
+    rpc rx_request(operation: u8, data: u32, id: u64) -> bool;
     rpc get_state() -> u8;
     rpc heartbeat_rcvd() -> bool;
     rpc get_log_entry() -> (u8, i64);
     rpc get_term() -> usize;
+    rpc set_leader();
 }
 
 #[derive(Clone)]
@@ -38,10 +40,12 @@ pub struct Server {
     log_staging: Arc<RwLock<Vec<(u8, i64)>>>,
     log: Arc<RwLock<Vec<(u8, i64)>>>,
     voted_this_term: Arc<RwLock<bool>>,
+    leader_id: Arc<RwLock<u64>>,
+    my_id: Arc<RwLock<u64>>,
 }
 
 impl Server {
-    pub fn new() -> Self {
+    pub fn new(id: u64) -> Self {
         Server {
             state: Arc::new(RwLock::new(State::Follower)),
             term: Arc::new(RwLock::new(0)),
@@ -50,6 +54,8 @@ impl Server {
             log_staging: Arc::new(RwLock::new(Vec::new())),
             log: Arc::new(RwLock::new(vec![(0, 0)])),
             voted_this_term: Arc::new(RwLock::new(false)),
+            leader_id: Arc::new(RwLock::new(hash(&"No Leader".to_string()))),
+            my_id: Arc::new(RwLock::new(id)),
         }
     }
 
@@ -66,10 +72,13 @@ impl Service for Server {
     fn request_vote(&self, id: u64) -> bool {
         let state = self.state.read().unwrap();
         let mut voted_this_term = self.voted_this_term.write().unwrap();
+        let mut leader_id = self.leader_id.write().unwrap();
 
         if *state == State::Follower && !*voted_this_term {
             // vote yes
             *voted_this_term = true;
+            *leader_id = id;
+            info!("Voted for {}", id);
             true
         } else {
             // vote no
@@ -108,16 +117,21 @@ impl Service for Server {
                     },
                     // Else return false (this will not initiate an 
                     // election, it just will not reset the timer)
-                    false => false
+                    false => { false }
                 },
             // If leader or candidate, we do not check
             // for the heartbeat, as we are either sending
             // the heartbeat, or an election is in progress
-            State::Leader | State::Candidate => false
+            State::Leader | State::Candidate => { true }
         }
     }
 
-    fn rx_request(&self, op_code: u8, data: u32) -> bool {
+    fn rx_request(&self, op_code: u8, data: u32, id: u64) -> bool {
+        // Check that request came from leader
+        if id != *self.leader_id.read().unwrap() {
+            warn!("Transmission from node other than leader");
+            return false;
+        }
         // Heartbeat recieved
         let mut heartbeat_rcvd = self.heartbeat_rcvd.write().unwrap();
         *heartbeat_rcvd = true;
@@ -131,6 +145,14 @@ impl Service for Server {
             Request::Commit => { self.commit_log() },
             Request::Heartbeat => { true },
         }
+    }
+
+    fn set_leader(&self) {
+        let mut leader_id = self.leader_id.write().unwrap();
+        let mut state = self.state.write().unwrap();
+
+        *leader_id = *self.my_id.read().unwrap();
+        *state = State::Leader;
     }
 
     fn get_log_entry(&self) -> (u8, i64) {

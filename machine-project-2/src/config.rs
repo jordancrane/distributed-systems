@@ -3,7 +3,7 @@ use clap::{App, Arg};
 pub fn fetch_cli_options() -> (String, Vec<String>) {
     let matches = App::new("Raft Leader Election Demo")
         .version("0.0.1")
-        .author("Jonah G. <jonah@george@me.com>")
+        .author(crate_authors!())
         .arg(Arg::with_name("host").required(true).long("host").takes_value(true))
         .arg(Arg::with_name("peer").long("peer").multiple(true).takes_value(true))
         .get_matches();
