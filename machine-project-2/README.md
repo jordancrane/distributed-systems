@@ -16,5 +16,5 @@ rustc --version
 ## Running
 
 ```sh
-cargo run -- --host localhost:5000 --peer localhost:5001 
+RUST_LOG=info cargo run -- --host localhost:5000 --peer localhost:5001
 ```

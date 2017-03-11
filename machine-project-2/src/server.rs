@@ -16,14 +16,17 @@ pub enum Request {
     Sub,
     Set,
     Commit,
+    Heartbeat
 }
 
 service! {
-    rpc request_vote();
+    rpc request_vote() -> bool;
     rpc vote();
     rpc rx_request(operation: u8, data: u32) -> bool;
     rpc get_state() -> u8;
     rpc heartbeat_rcvd() -> bool;
+    rpc get_log_entry() -> (u8, i64);
+    rpc get_term() -> usize;
 }
 
 #[derive(Clone)]
@@ -32,6 +35,9 @@ pub struct Server {
     term: Arc<RwLock<usize>>,
     vote_count: Arc<RwLock<usize>>,
     heartbeat_rcvd: Arc<RwLock<bool>>,
+    log_staging: Arc<RwLock<Vec<(u8, i64)>>>,
+    log: Arc<RwLock<Vec<(u8, i64)>>>,
+    voted_this_term: Arc<RwLock<bool>>,
 }
 
 impl Server {
@@ -41,20 +47,33 @@ impl Server {
             term: Arc::new(RwLock::new(0)),
             vote_count: Arc::new(RwLock::new(0)),
             heartbeat_rcvd: Arc::new(RwLock::new(false)),
+            log_staging: Arc::new(RwLock::new(Vec::new())),
+            log: Arc::new(RwLock::new(vec![(0, 0)])),
+            voted_this_term: Arc::new(RwLock::new(false)),
         }
+    }
+
+    fn append_log(&self, request: Request, data: u32) -> bool {
+        true
+    }
+    
+    fn commit_log(&self) -> bool {
+        true
     }
 }
 
 impl Service for Server {
-    fn request_vote(&self) {
-        let mut state = self.state.write().unwrap();
+    fn request_vote(&self) -> bool {
+        let state = self.state.read().unwrap();
+        let mut voted_this_term = self.voted_this_term.write().unwrap();
 
-        if *state == State::Follower {
+        if *state == State::Follower && !*voted_this_term {
             // vote yes
-        }
-
-        if *state == State::Candidate {
+            *voted_this_term = true;
+            true
+        } else {
             // vote no
+            false
         }
     }
 
@@ -91,6 +110,9 @@ impl Service for Server {
                     // election, it just will not reset the timer)
                     false => false
                 },
+            // If leader or candidate, we do not check
+            // for the heartbeat, as we are either sending
+            // the heartbeat, or an election is in progress
             State::Leader | State::Candidate => false
         }
     }
@@ -101,13 +123,27 @@ impl Service for Server {
         *heartbeat_rcvd = true;
 
         let request = Codec::decode_request(op_code);
-        // TODO Handle log request
+        // Handle log request
+        match request {
+            Request::Set => { self.append_log(request, data) },
+            Request::Add => { self.append_log(request, data) },
+            Request::Sub => { self.append_log(request, data) },
+            Request::Commit => { self.commit_log() },
+            Request::Heartbeat => { true },
+        }
+    }
 
-        true
+    fn get_log_entry(&self) -> (u8, i64) {
+        let log = self.log.read().unwrap();
+        *log.last().unwrap()
     }
 
     fn get_state(&self) -> u8 {
         let state = self.state.read().unwrap();
         Codec::encode_state(*state)
+    }
+
+    fn get_term(&self) -> usize {
+        *self.term.read().unwrap()
     }
 }

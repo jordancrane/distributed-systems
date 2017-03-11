@@ -8,9 +8,9 @@ pub mod Codec {
     // integer state code
     pub fn encode_state(state: State) -> u8 {
         match state {
-            State::Leader    => return 0,
-            State::Candidate => return 1,
-            State::Follower  => return 2,
+            State::Leader    => { 0 },
+            State::Candidate => { 1 },
+            State::Follower  => { 2 },
         }
     }
 
@@ -18,9 +18,9 @@ pub mod Codec {
     // integer state code
     pub fn decode_state(state_code: u8) -> State {
         match state_code {
-            0 => return State::Leader,
-            1 => return State::Candidate,
-            2 => return State::Follower,
+            0 => { State::Leader },
+            1 => { State::Candidate },
+            2 => { State::Follower },
             _ => panic!("No State"),
         }
     }
@@ -29,10 +29,11 @@ pub mod Codec {
     // integer operation code
     pub fn encode_request(request: Request) -> u8 {
         match request {
-            Request::Set    => return 0,
-            Request::Add    => return 1,
-            Request::Sub    => return 2,
-            Request::Commit => return 3,
+            Request::Set    => { 0 },
+            Request::Add    => { 1 },
+            Request::Sub    => { 2 },
+            Request::Commit => { 3 },
+            Request::Heartbeat => { 4 },
         }
     }
 
@@ -40,10 +41,11 @@ pub mod Codec {
     // integer operation code
     pub fn decode_request(op_code: u8) -> Request {
         match op_code {
-            0 => return Request::Set,
-            1 => return Request::Add,
-            2 => return Request::Sub,
-            3 => return Request::Commit,
+            0 => { Request::Set },
+            1 => { Request::Add },
+            2 => { Request::Sub },
+            3 => { Request::Commit },
+            4 => { Request::Heartbeat },
             _ => panic!("No such op code"),
         }
     }
