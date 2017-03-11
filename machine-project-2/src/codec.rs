@@ -1,6 +1,9 @@
+// Simple codec to allow serialized transmission in the background
+// while still permitting the use of helpful enums
 pub mod Codec {
     use server::State;
     use server::Request;
+
     // Can't selialize enums over tarpc, so need to encode the 
     // integer state code
     pub fn encode_state(state: State) -> u8 {

@@ -97,6 +97,7 @@ impl Node {
         println!("Connected to {} peers", clients.len());
     }
 
+    // Send heartbeat and log instructions
     fn tx_request(&mut self) {
         let state_code = self.addr.get_state().unwrap();
         let clients = &self.clients;

@@ -87,8 +87,8 @@ impl Service for Server {
                         *heartbeat_rcvd = false;
                         true
                     },
-                    // Else return false. This will not initiate an 
-                    // election, it just will not reset the timer
+                    // Else return false (this will not initiate an 
+                    // election, it just will not reset the timer)
                     false => false
                 },
             State::Leader | State::Candidate => false
