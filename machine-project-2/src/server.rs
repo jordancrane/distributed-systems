@@ -20,7 +20,7 @@ pub enum Request {
 }
 
 service! {
-    rpc request_vote() -> bool;
+    rpc request_vote(id: u64) -> bool;
     rpc vote();
     rpc rx_request(operation: u8, data: u32) -> bool;
     rpc get_state() -> u8;
@@ -63,7 +63,7 @@ impl Server {
 }
 
 impl Service for Server {
-    fn request_vote(&self) -> bool {
+    fn request_vote(&self, id: u64) -> bool {
         let state = self.state.read().unwrap();
         let mut voted_this_term = self.voted_this_term.write().unwrap();
 

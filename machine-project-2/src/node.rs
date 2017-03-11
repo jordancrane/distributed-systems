@@ -1,10 +1,16 @@
 use tarpc::ServeHandle;
 use server::*;
-use std::time::{ Duration, Instant };
+use std::time::{Duration, Instant};
 use ticktock::timer::Timer;
 use codec::Codec;
 use log::LogLevel;
 use env_logger;
+use std::hash::{Hash, SipHasher, Hasher};
+
+struct ClientPair {
+    id: u64,
+    client: Client,
+}
 
 struct TimerFlags {
     election: bool,
@@ -15,14 +21,21 @@ struct TimerFlags {
 
 pub struct Node {
     serve_handle:    ServeHandle,
-    clients:         Vec<Client>,
+    clients:         Vec<ClientPair>,
     requests:        Vec<(Request, u32)>,
-    id:              String,
+    id:              u64,
     addr:            Client,
     heartbeat_timer: Timer,
     discovery_timer: Timer,
     election_timer:  Timer,
     leader_timer:    Timer,
+}
+
+// Create unique id from host/peer string
+fn hash<T: Hash>(t: &T) -> u64 {
+    let mut s = SipHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
 
 impl Node {
@@ -32,7 +45,7 @@ impl Node {
             clients: Vec::new(),
             requests: Vec::new(),
             addr: Client::new(&host).unwrap(),
-            id: host,
+            id: hash(&host),
             // Create timers for election and new client discovery
             // Timer to track if election has timed out -  
             // If this times out during the election, the
@@ -111,7 +124,7 @@ impl Node {
                 Some(peer) =>
                     // Create new client
                     match Client::new(&peer) {
-                        Ok(c)  => clients.push(c),
+                        Ok(client)  => clients.push(ClientPair{ id: hash(&peer), client: client }),
                         Err(_) => {
                             // If creation is unsuccessful, push peer back onto
                             // peers and break loop. Wait for next discovery
@@ -144,7 +157,7 @@ impl Node {
             let op_code = Codec::encode_request(request);
 
             for client in clients {
-                let reply = client.rx_request(op_code, data);
+                let reply = client.client.rx_request(op_code, data);
                 // TODO Handle reply
                 // If request was a write request:
                 //
@@ -168,7 +181,7 @@ impl Node {
 
         // TODO identify server to clients
         for client in clients {
-            vote_count += match client.request_vote().unwrap() {
+            vote_count += match client.client.request_vote(client.id).unwrap() {
                 true => 1,
                 false => 0,
             };
@@ -189,7 +202,7 @@ impl Node {
     pub fn drop_clients(&mut self) {
         let mut clients = &mut self.clients;
         while !clients.is_empty() {
-            drop(clients.pop());
+            drop(clients.pop().unwrap().client);
         }
     }
 
