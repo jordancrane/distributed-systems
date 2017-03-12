@@ -25,6 +25,7 @@ service! {
     rpc vote();
     rpc rx_request(operation: u8, data: u32, id: u64) -> bool;
     rpc get_state() -> u8;
+    rpc set_state(new_state: u8);
     rpc heartbeat_rcvd() -> bool;
     rpc get_log_entry() -> (u8, i64);
     rpc get_term() -> usize;
@@ -122,7 +123,8 @@ impl Service for Server {
             // If leader or candidate, we do not check
             // for the heartbeat, as we are either sending
             // the heartbeat, or an election is in progress
-            State::Leader | State::Candidate => { true }
+            State::Leader  => { true },
+            State::Candidate => { false },
         }
     }
 
@@ -139,11 +141,9 @@ impl Service for Server {
         let request = Codec::decode_request(op_code);
         // Handle log request
         match request {
-            Request::Set => { self.append_log(request, data) },
-            Request::Add => { self.append_log(request, data) },
-            Request::Sub => { self.append_log(request, data) },
-            Request::Commit => { self.commit_log() },
+            Request::Commit    => { self.commit_log() },
             Request::Heartbeat => { true },
+            _                  => { self.append_log(request, data) },
         }
     }
 
@@ -163,6 +163,11 @@ impl Service for Server {
     fn get_state(&self) -> u8 {
         let state = self.state.read().unwrap();
         Codec::encode_state(*state)
+    }
+
+    fn set_state(&self, new_state: u8) {
+        let mut state = self.state.write().unwrap();
+        *state = Codec::decode_state(new_state);
     }
 
     fn get_term(&self) -> usize {

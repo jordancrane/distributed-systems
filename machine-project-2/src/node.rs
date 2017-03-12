@@ -57,7 +57,7 @@ impl Node {
             // Timer to check for new clients
             discovery_timer: Timer::new(Duration::from_millis(1000)),
             // Timer to send heartbeat and log updates
-            heartbeat_timer: Timer::new(Duration::from_millis(50)),
+            heartbeat_timer: Timer::new(Duration::from_millis(20)),
         }
     }
 
@@ -73,9 +73,9 @@ impl Node {
         // Operation loop
         loop {
             // Get current time
-            let now = Instant::now();
+            let mut now = Instant::now();
             // Create timer flags
-            let flags = TimerFlags {
+            let mut flags = TimerFlags {
                 election: self.election_timer.has_fired(now),
                 leader: self.leader_timer.has_fired(now),
                 heartbeat: self.heartbeat_timer.has_fired(now),
@@ -85,6 +85,7 @@ impl Node {
             // Send heartbeat and log updates
             if flags.heartbeat {
                 self.tx_request();
+                flags.heartbeat = false;
                 self.heartbeat_timer.reset(now);
             }
 
@@ -92,11 +93,13 @@ impl Node {
             // peers is not empty
             if flags.discovery && !peers.is_empty() {
                 self.add_clients(&mut peers);
+                flags.discovery = false;
                 self.discovery_timer.reset(now);
             }
 
             // Check if leader is alive, reset timer if so
             if self.heartbeat_rcvd() {
+                flags.leader = false;
                 self.leader_timer.reset(now);
             }
 
@@ -104,6 +107,7 @@ impl Node {
             if flags.leader {
                 warn!("Leader has timed out: Initiating election");
                 self.initiate_election();
+                flags.leader = false;
                 self.leader_timer.reset(now);
             }
         }
@@ -145,6 +149,8 @@ impl Node {
         let clients = &self.clients;
         let mut requests = &mut self.requests;
         let state = Codec::decode_state(state_code);
+        let mut writes = 0;
+        let majority = (clients.len() + 1) / 2;
 
         if state != State::Leader {
             // If node is not leader, 
@@ -160,12 +166,26 @@ impl Node {
 
             for client in clients {
                 let reply = client.client.rx_request(op_code, data, self.id);
-                // TODO Handle reply
-                // If request was a write request:
-                //
-                // If request was a commit request:
-                //
-                // If no request:
+                // Handle reply
+                match reply {
+                    Ok(true) =>
+                        match request {
+                            Request::Commit    => continue,
+                            Request::Heartbeat => continue,
+                            // All write requests
+                            _                  => writes += 1,
+                        },
+                     _ => {}// TODO Retransmit
+                }
+            }
+
+            // Commit majority changes
+            if writes > majority {
+                // TODO commit change to own log
+                let op_code = Codec::encode_request(Request::Commit);
+                for client in clients {
+                    client.client.rx_request(op_code, data, self.id);
+                }
             }
         }
     }
@@ -181,7 +201,9 @@ impl Node {
         let mut vote_count = 1;
         let majority = (clients.len() + 1) / 2;
 
-        // TODO identify server to clients
+        let state_code = Codec::encode_state(State::Candidate);
+        self.addr.set_state(state_code);
+
         for client in clients {
             vote_count += match client.client.request_vote(self.id).unwrap() {
                 true => 1,
