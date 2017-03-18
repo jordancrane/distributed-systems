@@ -1,85 +1,54 @@
-use std::sync::RwLock;
 use std::sync::Arc;
-use std::io;
-use codec::Codec;
-use node::hash;
+use atomic::{Atomic, Ordering};
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub enum State {
     Leader,
     Candidate,
     Follower,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Request {
-    Add,
-    Sub,
-    Set,
-    Commit,
-    Heartbeat
-}
-
 service! {
-    rpc request_vote(id: u64) -> bool;
-    rpc vote();
-    rpc rx_request(operation: u8, data: u32, id: u64) -> bool;
-    rpc get_state() -> u8;
-    rpc set_state(new_state: u8);
-    rpc heartbeat_rcvd() -> bool;
-    rpc get_log_entry() -> (u8, i64);
+    rpc request_vote(client_id: String) -> bool;
+    rpc heartbeat(client_id: String);
+    rpc get_state() -> State;
     rpc get_term() -> usize;
-    rpc set_leader();
+    rpc set_state(state: State);
+    rpc get_heartbeat_rcvd() -> bool;
 }
 
 #[derive(Clone)]
 pub struct Server {
-    state: Arc<RwLock<State>>,
-    term: Arc<RwLock<usize>>,
-    vote_count: Arc<RwLock<usize>>,
-    heartbeat_rcvd: Arc<RwLock<bool>>,
-    log_staging: Arc<RwLock<Vec<(u8, i64)>>>,
-    log: Arc<RwLock<Vec<(u8, i64)>>>,
-    voted_this_term: Arc<RwLock<bool>>,
-    leader_id: Arc<RwLock<u64>>,
-    my_id: Arc<RwLock<u64>>,
+    state: Arc<Atomic<State>>,
+    term: Arc<Atomic<usize>>,
+    vote_count: Arc<Atomic<usize>>,
+    heartbeat_rcvd: Arc<Atomic<bool>>,
+    voted_this_term: Arc<Atomic<bool>>,
+    leader_id: Arc<Atomic<String>>,
+    id: String,
 }
 
 impl Server {
-    pub fn new(id: u64) -> Self {
+    pub fn new(id: String) -> Self {
         Server {
-            state: Arc::new(RwLock::new(State::Follower)),
-            term: Arc::new(RwLock::new(0)),
-            vote_count: Arc::new(RwLock::new(0)),
-            heartbeat_rcvd: Arc::new(RwLock::new(false)),
-            log_staging: Arc::new(RwLock::new(Vec::new())),
-            log: Arc::new(RwLock::new(vec![(0, 0)])),
-            voted_this_term: Arc::new(RwLock::new(false)),
-            leader_id: Arc::new(RwLock::new(hash(&"No Leader".to_string()))),
-            my_id: Arc::new(RwLock::new(id)),
+            state: Arc::new(Atomic::new(State::Follower)),
+            term: Arc::new(Atomic::new(0)),
+            vote_count: Arc::new(Atomic::new(0)),
+            heartbeat_rcvd: Arc::new(Atomic::new(false)),
+            voted_this_term: Arc::new(Atomic::new(false)),
+            leader_id: Arc::new(Atomic::new("No Leader".to_string())),
+            id: id,
         }
-    }
-
-    fn append_log(&self, request: Request, data: u32) -> bool {
-        true
-    }
-    
-    fn commit_log(&self) -> bool {
-        true
     }
 }
 
 impl Service for Server {
-    fn request_vote(&self, id: u64) -> bool {
-        let state = self.state.read().unwrap();
-        let mut voted_this_term = self.voted_this_term.write().unwrap();
-        let mut leader_id = self.leader_id.write().unwrap();
-
-        if *state == State::Follower && !*voted_this_term {
+    fn request_vote(&self, client_id: String) -> bool {
+        if self.state.load(Ordering::Relaxed) == State::Follower && !self.voted_this_term.load(Ordering::Relaxed) {
             // vote yes
-            *voted_this_term = true;
-            *leader_id = id;
-            info!("Voted for {}", id);
+            self.voted_this_term.store(true, Ordering::Relaxed);
+            self.leader_id.store(client_id, Ordering::Relaxed);
+            println!("Voted for {}", client_id);
             true
         } else {
             // vote no
@@ -87,90 +56,51 @@ impl Service for Server {
         }
     }
 
-    fn vote(&self) {
-        let mut state = self.state.write().unwrap();
-        let mut vote_count = self.vote_count.write().unwrap();
-
-        if *state == State::Candidate {
-            *vote_count += 1;
-
-            // Does this node contain a majority?
-            if *vote_count > 2 {
-                *state = State::Leader;
-            }
-        }
-    }
-
-    fn heartbeat_rcvd(&self) -> bool {
-        let mut heartbeat_rcvd = self.heartbeat_rcvd.write().unwrap();
-        let state = self.state.read().unwrap();
-
+    fn get_heartbeat_rcvd(&self) -> bool {
         // Only check for heartbeat if follower
-        match *state {
-            State::Follower => 
+        match self.state.load(Ordering::Relaxed) {
+            State::Follower =>
                 // Check if heartbeat has been received
-                match *heartbeat_rcvd {
+                match self.heartbeat_rcvd.load(Ordering::Relaxed) {
                     true  => {
                         // If so, unset flag and return true (this will
                         // reset the timer)
-                        *heartbeat_rcvd = false;
+                        self.heartbeat_rcvd.store(false, Ordering::Relaxed);
                         true
                     },
-                    // Else return false (this will not initiate an 
+                    // Else return false (this will not initiate an
                     // election, it just will not reset the timer)
                     false => { false }
                 },
             // If leader or candidate, we do not check
             // for the heartbeat, as we are either sending
             // the heartbeat, or an election is in progress
-            State::Leader  => { true },
+            State::Leader => { true },
             State::Candidate => { false },
         }
     }
 
-    fn rx_request(&self, op_code: u8, data: u32, id: u64) -> bool {
-        // Check that request came from leader
-        if id != *self.leader_id.read().unwrap() {
-            warn!("Transmission from node other than leader");
-            return false;
-        }
-        // Heartbeat recieved
-        let mut heartbeat_rcvd = self.heartbeat_rcvd.write().unwrap();
-        *heartbeat_rcvd = true;
+    fn heartbeat(&self, client_id: String) {
+        println!("Received heartbeat");
 
-        let request = Codec::decode_request(op_code);
-        // Handle log request
-        match request {
-            Request::Commit    => { self.commit_log() },
-            Request::Heartbeat => { true },
-            _                  => { self.append_log(request, data) },
-        }
+        self.leader_id.store(client_id, Ordering::Relaxed);
+        self.heartbeat_rcvd.store(true, Ordering::Relaxed);
+        self.state.store(State::Follower, Ordering::Relaxed);
     }
 
-    fn set_leader(&self) {
-        let mut leader_id = self.leader_id.write().unwrap();
-        let mut state = self.state.write().unwrap();
-
-        *leader_id = *self.my_id.read().unwrap();
-        *state = State::Leader;
-    }
-
-    fn get_log_entry(&self) -> (u8, i64) {
-        let log = self.log.read().unwrap();
-        *log.last().unwrap()
-    }
-
-    fn get_state(&self) -> u8 {
-        let state = self.state.read().unwrap();
-        Codec::encode_state(*state)
-    }
-
-    fn set_state(&self, new_state: u8) {
-        let mut state = self.state.write().unwrap();
-        *state = Codec::decode_state(new_state);
+    fn get_state(&self) -> State {
+        self.state.load(Ordering::Relaxed)
     }
 
     fn get_term(&self) -> usize {
-        *self.term.read().unwrap()
+        self.term.load(Ordering::Relaxed)
+    }
+
+    fn set_state(&self, state: State) {
+        self.state.store(state, Ordering::Relaxed);
+
+        if state == State::Leader {
+            self.leader_id.store(self.id, Ordering::Relaxed);
+        }
     }
 }
