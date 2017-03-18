@@ -1,5 +1,5 @@
-use std::sync::RwLock;
 use std::sync::Arc;
+use atomic::{Atomic, Ordering};
 
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub enum State {
@@ -19,39 +19,35 @@ service! {
 
 #[derive(Clone)]
 pub struct Server {
-    state: Arc<RwLock<State>>,
-    term: Arc<RwLock<usize>>,
-    vote_count: Arc<RwLock<usize>>,
-    heartbeat_rcvd: Arc<RwLock<bool>>,
-    voted_this_term: Arc<RwLock<bool>>,
-    leader_id: Arc<RwLock<String>>,
-    id: Arc<RwLock<String>>,
+    state: Arc<Atomic<State>>,
+    term: Arc<Atomic<usize>>,
+    vote_count: Arc<Atomic<usize>>,
+    heartbeat_rcvd: Arc<Atomic<bool>>,
+    voted_this_term: Arc<Atomic<bool>>,
+    leader_id: Arc<Atomic<String>>,
+    id: String,
 }
 
 impl Server {
     pub fn new(id: String) -> Self {
         Server {
-            state: Arc::new(RwLock::new(State::Follower)),
-            term: Arc::new(RwLock::new(0)),
-            vote_count: Arc::new(RwLock::new(0)),
-            heartbeat_rcvd: Arc::new(RwLock::new(false)),
-            voted_this_term: Arc::new(RwLock::new(false)),
-            leader_id: Arc::new(RwLock::new("No Leader".to_string())),
-            id: Arc::new(RwLock::new(id)),
+            state: Arc::new(Atomic::new(State::Follower)),
+            term: Arc::new(Atomic::new(0)),
+            vote_count: Arc::new(Atomic::new(0)),
+            heartbeat_rcvd: Arc::new(Atomic::new(false)),
+            voted_this_term: Arc::new(Atomic::new(false)),
+            leader_id: Arc::new(Atomic::new("No Leader".to_string())),
+            id: id,
         }
     }
 }
 
 impl Service for Server {
     fn request_vote(&self, client_id: String) -> bool {
-        let state = self.state.read().unwrap();
-        let mut voted_this_term = self.voted_this_term.write().unwrap();
-        let mut leader_id = self.leader_id.write().unwrap();
-
-        if *state == State::Follower && !*voted_this_term {
+        if self.state.load(Ordering::Relaxed) == State::Follower && !self.voted_this_term.load(Ordering::Relaxed) {
             // vote yes
-            *voted_this_term = true;
-            *leader_id = client_id.clone();
+            self.voted_this_term.store(true, Ordering::Relaxed);
+            self.leader_id.store(client_id, Ordering::Relaxed);
             println!("Voted for {}", client_id);
             true
         } else {
@@ -61,18 +57,15 @@ impl Service for Server {
     }
 
     fn get_heartbeat_rcvd(&self) -> bool {
-        let mut heartbeat_rcvd = self.heartbeat_rcvd.write().unwrap();
-        let state = self.state.read().unwrap();
-
         // Only check for heartbeat if follower
-        match *state {
+        match self.state.load(Ordering::Relaxed) {
             State::Follower =>
                 // Check if heartbeat has been received
-                match *heartbeat_rcvd {
+                match self.heartbeat_rcvd.load(Ordering::Relaxed) {
                     true  => {
                         // If so, unset flag and return true (this will
                         // reset the timer)
-                        *heartbeat_rcvd = false;
+                        self.heartbeat_rcvd.store(false, Ordering::Relaxed);
                         true
                     },
                     // Else return false (this will not initiate an
@@ -90,31 +83,24 @@ impl Service for Server {
     fn heartbeat(&self, client_id: String) {
         println!("Received heartbeat");
 
-        let mut state = self.state.write().unwrap();
-        let mut leader_id = self.leader_id.write().unwrap();
-        let mut heartbeat_rcvd = self.heartbeat_rcvd.write().unwrap();
-
-        *leader_id = client_id;
-        *heartbeat_rcvd = true;
-        *state = State::Follower;
+        self.leader_id.store(client_id, Ordering::Relaxed);
+        self.heartbeat_rcvd.store(true, Ordering::Relaxed);
+        self.state.store(State::Follower, Ordering::Relaxed);
     }
 
     fn get_state(&self) -> State {
-        *self.state.read().unwrap()
+        self.state.load(Ordering::Relaxed)
     }
 
     fn get_term(&self) -> usize {
-        *self.term.read().unwrap()
+        self.term.load(Ordering::Relaxed)
     }
 
     fn set_state(&self, state: State) {
-        *self.state.write().unwrap() = state;
+        self.state.store(state, Ordering::Relaxed);
 
         if state == State::Leader {
-            let mut leader_id = self.leader_id.write().unwrap();
-            let id = self.id.read().unwrap().clone();
-
-            *leader_id = id;
+            self.leader_id.store(self.id, Ordering::Relaxed);
         }
     }
 }
