@@ -11,6 +11,9 @@ clap = "*"
 ticktock = "0.3.4"
 log = "0.3.0"
 env_logger = "0.4.2"
+serde_derive = "0.8.2"
+serde_json = "0.8.2"
+serde = "0.8.2"
 
 [[bin]]
 name = "machine-project-2"
