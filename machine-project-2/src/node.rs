@@ -2,28 +2,36 @@ use tarpc::ServeHandle;
 use server::*;
 use std::time::{Duration, Instant};
 use ticktock::timer::Timer;
+use std::hash::{Hash, SipHasher, Hasher};
 
 struct ClientPair {
-    id: String,
+    id: u64,
     client: Client,
 }
 
 pub struct Node {
     serve_handle: ServeHandle,
     clients: Vec<ClientPair>,
-    id: String,
+    id: u64,
     addr: Client,
     heartbeat_timer: Timer,
     election_timer: Timer,
 }
 
+// Create unique id from host/peer string
+pub fn hash<T: Hash>(t: &T) -> u64 {
+    let mut s = SipHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+
 impl Node {
     pub fn new(host: String, timeout: u64) -> Self {
         Node {
-            serve_handle: Server::new(host.clone()).spawn(host.as_str()).unwrap(),
+            serve_handle: Server::new(hash(&host)).spawn(host.as_str()).unwrap(),
             clients: Vec::new(),
             addr: Client::new(host.clone()).unwrap(),
-            id: host,
+            id: hash(&host),
             election_timer: Timer::new(Duration::from_millis(timeout)),
             heartbeat_timer: Timer::new(Duration::from_millis(50)),
         }
@@ -70,7 +78,7 @@ impl Node {
                 Some(peer) =>
                     // Create new client
                     match Client::new(&peer) {
-                        Ok(client)  => clients.push(ClientPair{ id: peer, client: client }),
+                        Ok(client)  => clients.push(ClientPair{ id: hash(&peer), client: client }),
                         Err(_) => {
                             // If creation is unsuccessful, push peer back onto
                             // peers and break loop. Wait for next discovery
@@ -97,7 +105,7 @@ impl Node {
 
         println!("Sending heartbeat!");
         for client in clients {
-            client.client.heartbeat(self.id.clone());
+            client.client.heartbeat(self.id);
         }
     }
 
@@ -121,7 +129,7 @@ impl Node {
 
             // TODO identify server to clients
             for client in clients {
-                vote_count += match client.client.request_vote(self.id.clone()) {
+                vote_count += match client.client.request_vote(self.id) {
                     Ok(result) => {
                         match result {
                             true => 1,

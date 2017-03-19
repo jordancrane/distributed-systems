@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use atomic::{Atomic, Ordering};
+use node::hash;
 
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub enum State {
@@ -9,8 +10,8 @@ pub enum State {
 }
 
 service! {
-    rpc request_vote(client_id: String) -> bool;
-    rpc heartbeat(client_id: String);
+    rpc request_vote(client_id: u64) -> bool;
+    rpc heartbeat(client_id: u64);
     rpc get_state() -> State;
     rpc get_term() -> usize;
     rpc set_state(state: State);
@@ -24,26 +25,26 @@ pub struct Server {
     vote_count: Arc<Atomic<usize>>,
     heartbeat_rcvd: Arc<Atomic<bool>>,
     voted_this_term: Arc<Atomic<bool>>,
-    leader_id: Arc<Atomic<String>>,
-    id: String,
+    leader_id: Arc<Atomic<u64>>,
+    id: u64,
 }
 
 impl Server {
-    pub fn new(id: String) -> Self {
+    pub fn new(id: u64) -> Self {
         Server {
             state: Arc::new(Atomic::new(State::Follower)),
             term: Arc::new(Atomic::new(0)),
             vote_count: Arc::new(Atomic::new(0)),
             heartbeat_rcvd: Arc::new(Atomic::new(false)),
             voted_this_term: Arc::new(Atomic::new(false)),
-            leader_id: Arc::new(Atomic::new("No Leader".to_string())),
+            leader_id: Arc::new(Atomic::new(hash(&"No Leader".to_string()))),
             id: id,
         }
     }
 }
 
 impl Service for Server {
-    fn request_vote(&self, client_id: String) -> bool {
+    fn request_vote(&self, client_id: u64) -> bool {
         if self.state.load(Ordering::Relaxed) == State::Follower && !self.voted_this_term.load(Ordering::Relaxed) {
             // vote yes
             self.voted_this_term.store(true, Ordering::Relaxed);
@@ -80,7 +81,7 @@ impl Service for Server {
         }
     }
 
-    fn heartbeat(&self, client_id: String) {
+    fn heartbeat(&self, client_id: u64) {
         println!("Received heartbeat");
 
         self.leader_id.store(client_id, Ordering::Relaxed);
