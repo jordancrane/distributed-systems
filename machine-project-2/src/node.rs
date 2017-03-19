@@ -19,6 +19,8 @@ pub struct Node {
 }
 
 // Create unique id from host/peer string
+// Can't use strings since they don't implement
+// the copy method
 pub fn hash<T: Hash>(t: &T) -> u64 {
     let mut s = SipHasher::new();
     t.hash(&mut s);
@@ -52,14 +54,14 @@ impl Node {
                 self.heartbeat_timer.reset(Instant::now());
             }
 
-            // Check if leader is alive, reset timer if so
-            if self.heartbeat_rcvd() {
-                self.election_timer.reset(Instant::now());
-            }
-
             // Check for leader timeout
             if self.election_timer.has_fired(Instant::now()) {
-                self.initiate_election();
+                if !self.heartbeat_rcvd() {
+                    if self.drop_lost_leader() {
+                        self.initiate_election();
+                    }
+                }
+                self.election_timer.reset(Instant::now());
             }
         }
     }
@@ -97,15 +99,15 @@ impl Node {
     fn broadcast_heartbeats(&mut self) {
         let state = self.addr.get_state().unwrap();
         let clients = &self.clients;
+        let term = self.addr.get_term().unwrap();
 
         if state != State::Leader {
             // If node is not leader, it doesn't need to send requests
             return;
         }
 
-        println!("Sending heartbeat!");
         for client in clients {
-            client.client.heartbeat(self.id);
+            client.client.heartbeat(self.id, term);
         }
     }
 
@@ -114,20 +116,19 @@ impl Node {
     }
 
     fn initiate_election(&mut self) {
-        self.election_timer.reset(Instant::now());
+        let clients = &self.clients;
         let state = self.addr.get_state().unwrap();
 
         if state != State::Leader {
             println!("Leader has timed out: Initiating election");
             self.addr.set_state(State::Candidate);
-
             // Initiate election
-            let clients = &self.clients;
             // Node votes for itself
             let mut vote_count = 1;
+            self.addr.set_voted_this_term();
+            // Calculate majority
             let majority = (clients.len() + 1) / 2;
 
-            // TODO identify server to clients
             for client in clients {
                 vote_count += match client.client.request_vote(self.id) {
                     Ok(result) => {
@@ -140,15 +141,48 @@ impl Node {
                 };
             }
 
-            println!("Received {} votes", vote_count);
+            println!("Received {} vote(s) from {} node(s)", vote_count, clients.len() + 1);
 
             if vote_count > majority {
-                println!("{} is the new leader", self.id);
+                self.addr.increment_term();
+                println!("I am the new leader");
                 self.addr.set_state(State::Leader);
             } else {
+                println!("Election of {} failed", self.id);
                 self.addr.set_state(State::Follower);
+                self.addr.reset_voted_this_term();
             }
         }
+    }
+
+    fn drop_lost_leader(&mut self) -> bool {
+        let leader_index = self.get_leader_index();
+        let mut clients = &mut self.clients;
+
+        match leader_index {
+            Some(index) => 
+                match clients.get(index).unwrap().client.is_alive() {
+                    Ok(_) => { false },
+                    Err(_) => {
+                        println!("Dropping lost leader");
+                        let lost_leader = clients.remove(index); 
+                        drop(lost_leader.client);
+                        true
+                    }
+                },
+            None => { true }
+        }
+
+    }
+
+    fn get_leader_index(&self) -> Option<usize> {
+        let clients = &self.clients;
+        for (index, client_pair) in clients.iter().enumerate() {
+            if client_pair.id == self.addr.get_leader_id().unwrap() {
+                return Some(index);
+            }
+        }
+        None
     }
 
     pub fn drop_clients(&mut self) {

@@ -10,53 +10,48 @@ pub enum State {
 }
 
 service! {
-    rpc request_vote(client_id: u64) -> bool;
-    rpc heartbeat(client_id: u64);
+    rpc get_leader_id() -> u64;
+    rpc get_heartbeat_rcvd() -> bool;
     rpc get_state() -> State;
     rpc get_term() -> usize;
+    rpc heartbeat(client_id: u64, term: usize);
+    rpc increment_term();
+    rpc is_alive() -> bool;
+    rpc reset_voted_this_term();
+    rpc request_vote(client_id: u64) -> bool;
     rpc set_state(state: State);
-    rpc get_heartbeat_rcvd() -> bool;
+    rpc set_voted_this_term();
 }
 
 #[derive(Clone)]
 pub struct Server {
+    election_result_pending: Arc<Atomic<bool>>,
+    heartbeat_rcvd: Arc<Atomic<bool>>,
+    id: u64,
+    leader_id: Arc<Atomic<u64>>,
     state: Arc<Atomic<State>>,
     term: Arc<Atomic<usize>>,
     vote_count: Arc<Atomic<usize>>,
-    heartbeat_rcvd: Arc<Atomic<bool>>,
     voted_this_term: Arc<Atomic<bool>>,
-    leader_id: Arc<Atomic<u64>>,
-    id: u64,
 }
 
 impl Server {
     pub fn new(id: u64) -> Self {
+        println!("I am {}", id);
         Server {
+            election_result_pending: Arc::new(Atomic::new(false)),
+            heartbeat_rcvd: Arc::new(Atomic::new(false)),
+            id: id,
+            leader_id: Arc::new(Atomic::new(0)),
             state: Arc::new(Atomic::new(State::Follower)),
             term: Arc::new(Atomic::new(0)),
             vote_count: Arc::new(Atomic::new(0)),
-            heartbeat_rcvd: Arc::new(Atomic::new(false)),
             voted_this_term: Arc::new(Atomic::new(false)),
-            leader_id: Arc::new(Atomic::new(hash(&"No Leader".to_string()))),
-            id: id,
         }
     }
 }
 
 impl Service for Server {
-    fn request_vote(&self, client_id: u64) -> bool {
-        if self.state.load(Ordering::Relaxed) == State::Follower && !self.voted_this_term.load(Ordering::Relaxed) {
-            // vote yes
-            self.voted_this_term.store(true, Ordering::Relaxed);
-            self.leader_id.store(client_id, Ordering::Relaxed);
-            println!("Voted for {}", client_id);
-            true
-        } else {
-            // vote no
-            false
-        }
-    }
-
     fn get_heartbeat_rcvd(&self) -> bool {
         // Only check for heartbeat if follower
         match self.state.load(Ordering::Relaxed) {
@@ -81,12 +76,8 @@ impl Service for Server {
         }
     }
 
-    fn heartbeat(&self, client_id: u64) {
-        println!("Received heartbeat");
-
-        self.leader_id.store(client_id, Ordering::Relaxed);
-        self.heartbeat_rcvd.store(true, Ordering::Relaxed);
-        self.state.store(State::Follower, Ordering::Relaxed);
+    fn get_leader_id(&self) -> u64 {
+        self.leader_id.load(Ordering::Relaxed)
     }
 
     fn get_state(&self) -> State {
@@ -95,6 +86,52 @@ impl Service for Server {
 
     fn get_term(&self) -> usize {
         self.term.load(Ordering::Relaxed)
+    }
+
+    fn heartbeat(&self, client_id: u64, term: usize) {
+        if self.election_result_pending
+            .load(Ordering::Relaxed) {
+            self.leader_id.store(client_id, Ordering::Relaxed);
+            self.election_result_pending.store(false, Ordering::Relaxed);
+            println!("Term: {}", term);
+        }
+        self.term.store(term, Ordering::Relaxed);
+        self.heartbeat_rcvd.store(true, Ordering::Relaxed);
+        self.state.store(State::Follower, Ordering::Relaxed);
+    }
+
+    fn increment_term(&self) {
+        let term = self.term.load(Ordering::Relaxed) + 1;
+        println!("Term: {}", term);
+        self.term.store(term, Ordering::Relaxed);
+    }
+
+    fn is_alive(&self) -> bool {
+        true
+    }
+
+    fn reset_voted_this_term(&self) {
+        self.voted_this_term.store(false, Ordering::Relaxed);
+    }
+
+    fn set_voted_this_term(&self) {
+        self.voted_this_term.store(true, Ordering::Relaxed);
+    }
+
+    fn request_vote(&self, candidate_id: u64) -> bool {
+        self.election_result_pending.store(true, Ordering::Relaxed);
+        if self.state.load(Ordering::Relaxed) == State::Follower && !self.voted_this_term.load(Ordering::Relaxed) {
+            // increment term
+            self.voted_this_term.store(true, Ordering::Relaxed);
+            // set new leader id
+            self.leader_id.store(candidate_id, Ordering::Relaxed);
+            println!("Voted for {}", candidate_id);
+            // vote yes
+            true
+        } else {
+            // vote no
+            false
+        }
     }
 
     fn set_state(&self, state: State) {
