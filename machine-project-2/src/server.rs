@@ -119,18 +119,6 @@ impl Service for Server {
         self.voted_this_term.store(false, Ordering::Relaxed);
     }
 
-    //fn set_new_leader(&self, new_leader_id: u64, leader_term: usize) {
-    //    // set new leader id
-    //    if self.state.load(Ordering::Relaxed) != State::Leader 
-    //        && leader_term >= self.term.load(Ordering::Relaxed) {
-    //        self.leader_id.store(new_leader_id, Ordering::Relaxed);
-    //        self.term.store(leader_term, Ordering::Relaxed);
-    //        true
-    //    } else {
-    //        false
-    //    }
-    //}
-
     fn set_voted_this_term(&self) {
         self.voted_this_term.store(true, Ordering::Relaxed);
     }
