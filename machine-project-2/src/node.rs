@@ -10,12 +10,13 @@ struct ClientPair {
 }
 
 pub struct Node {
-    serve_handle: ServeHandle,
-    clients: Vec<ClientPair>,
-    id: u64,
     addr: Client,
-    heartbeat_timer: Timer,
+    clients: Vec<ClientPair>,
     election_timer: Timer,
+    heartbeat_timer: Timer,
+    id: u64,
+    serve_handle: ServeHandle,
+    stop: bool,
 }
 
 // Create unique id from host/peer string
@@ -31,11 +32,12 @@ impl Node {
     pub fn new(host: String, timeout: u64) -> Self {
         Node {
             serve_handle: Server::new(hash(&host)).spawn(host.as_str()).unwrap(),
-            clients: Vec::new(),
             addr: Client::new(host.clone()).unwrap(),
-            id: hash(&host),
+            clients: Vec::new(),
             election_timer: Timer::new(Duration::from_millis(timeout)),
             heartbeat_timer: Timer::new(Duration::from_millis(50)),
+            id: hash(&host),
+            stop: false,
         }
     }
 
@@ -63,6 +65,10 @@ impl Node {
                     }
                 }
                 self.election_timer.reset(Instant::now());
+            }
+
+            if self.stop {
+                break;
             }
         }
     }
@@ -118,6 +124,12 @@ impl Node {
         }
         while !dead_clients.is_empty() {
             drop(clients.remove(dead_clients.pop().unwrap()));
+        }
+        if clients.is_empty() {
+            println!("All other nodes have failed");
+            println!("Cluster compromised");
+            println!("Shutting down gracefully...");
+            self.stop = true;
         }
     }
 
@@ -207,13 +219,6 @@ impl Node {
             }
         }
         None
-    }
-
-    pub fn drop_clients(&mut self) {
-        let mut clients = &mut self.clients;
-        while !clients.is_empty() {
-            drop(clients.pop().unwrap().client);
-        }
     }
 
     pub fn stop(self) {

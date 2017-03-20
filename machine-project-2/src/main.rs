@@ -34,9 +34,6 @@ fn main() {
     // Leader timeout loop
     node.start(peers);
 
-    // Stop connections
-    node.drop_clients();
-
     // Stop server
     node.stop();
 }
