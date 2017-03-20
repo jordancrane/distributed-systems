@@ -1,3 +1,4 @@
-node1: RUST_LOG=info cargo run -- --host localhost:5000 --peer localhost:5001 --peer localhost:5002
-node2: RUST_LOG=info cargo run -- --host localhost:5001 --peer localhost:5000 --peer localhost:5002
-node3: RUST_LOG=info cargo run -- --host localhost:5002 --peer localhost:5000 --peer localhost:5001
+node1: cargo run -- --host localhost:5000 --peer localhost:5001 --peer localhost:5002 --peer localhost:5003
+node2: cargo run -- --host localhost:5001 --peer localhost:5000 --peer localhost:5002 --peer localhost:5003
+node3: cargo run -- --host localhost:5002 --peer localhost:5000 --peer localhost:5001 --peer localhost:5003
+node4: cargo run -- --host localhost:5003 --peer localhost:5000 --peer localhost:5001 --peer localhost:5002
