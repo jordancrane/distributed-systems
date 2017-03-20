@@ -57,6 +57,7 @@ impl Node {
             // Check for leader timeout
             if self.election_timer.has_fired(Instant::now()) {
                 if !self.heartbeat_rcvd() {
+                    println!("No heartbeat received");
                     if self.drop_lost_leader() {
                         self.initiate_election();
                     }
@@ -66,10 +67,6 @@ impl Node {
         }
     }
 
-    // TODO The logic in this function doesn't allow connections
-    // to be made until all peers have been initialized, due to
-    // the fact that the loop is broken on an Err(_) response
-    // in the nested match statement
     fn add_clients(&mut self, peers: &mut Vec<String>) {
         let ref mut clients = self.clients;
 
@@ -98,16 +95,29 @@ impl Node {
 
     fn broadcast_heartbeats(&mut self) {
         let state = self.addr.get_state().unwrap();
-        let clients = &self.clients;
+        let mut clients = &mut self.clients;
         let term = self.addr.get_term().unwrap();
+        let mut dead_clients = Vec::new();
 
         if state != State::Leader {
             // If node is not leader, it doesn't need to send requests
             return;
         }
 
-        for client in clients {
-            client.client.heartbeat(self.id, term);
+        for (index, client_pair) in clients.iter().enumerate() {
+            match client_pair.client.heartbeat(self.id, term) {
+                Ok(_) => {},
+                Err(_) => {
+                    println!("Lost client {}", client_pair.id);
+                    dead_clients.push(index);
+                }
+            }
+        }
+        if !dead_clients.is_empty() {
+            println!("Dropping {} lost client(s)", dead_clients.len());
+        }
+        while !dead_clients.is_empty() {
+            drop(clients.remove(dead_clients.pop().unwrap()));
         }
     }
 
@@ -116,41 +126,55 @@ impl Node {
     }
 
     fn initiate_election(&mut self) {
-        let clients = &self.clients;
+        let mut clients = &mut self.clients;
         let state = self.addr.get_state().unwrap();
+        let mut dead_clients = Vec::new();
 
         if state != State::Leader {
-            println!("Leader has timed out: Initiating election");
             self.addr.set_state(State::Candidate);
             // Initiate election
             // Node votes for itself
             let mut vote_count = 1;
+            self.addr.increment_term();
+            let term = self.addr.get_term().unwrap();
             self.addr.set_voted_this_term();
+            println!("Initiating election for term {}", term);
             // Calculate majority
             let majority = (clients.len() + 1) / 2;
 
-            for client in clients {
-                vote_count += match client.client.request_vote(self.id) {
+            for (index, client_pair) in clients.iter().enumerate() {
+                vote_count += match client_pair.client.request_vote(self.id, term) {
                     Ok(result) => {
                         match result {
                             true => 1,
                             false => 0,
                         }
+                    },
+                    Err(_) => {
+                        println!("Lost client {}", client_pair.id);
+                        dead_clients.push(index);
+                        0
                     }
-                    Err(_) => 0,
                 };
             }
 
-            println!("Received {} vote(s) from {} node(s)", vote_count, clients.len() + 1);
+            println!("Received {} vote(s) from {} node(s)", 
+                     vote_count, clients.len() + 1);
 
             if vote_count > majority {
-                self.addr.increment_term();
-                println!("I am the new leader");
+                println!("I am the leader for term {}", 
+                         self.addr.get_term().unwrap());
                 self.addr.set_state(State::Leader);
             } else {
-                println!("Election of {} failed", self.id);
-                self.addr.set_state(State::Follower);
-                self.addr.reset_voted_this_term();
+                println!("My election for term {} failed", 
+                         self.addr.get_term().unwrap());
+            }
+
+            if !dead_clients.is_empty() {
+                println!("Dropping {} lost client(s)", dead_clients.len());
+            }
+            while !dead_clients.is_empty() {
+                drop(clients.remove(dead_clients.pop().unwrap()));
             }
         }
     }
